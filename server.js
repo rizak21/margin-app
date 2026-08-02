@@ -1,22 +1,31 @@
 const express = require('express');
 const path = require('path');
-const Database = require('better-sqlite3');
+const fs = require('fs');
 
 const app = express();
 app.use(express.json({ limit: '12mb' })); // handwriting photos as base64 can be a few MB
 
-const db = new Database(path.join(__dirname, 'margin.db'));
-db.exec(`
-  CREATE TABLE IF NOT EXISTS boards (
-    visitor_id TEXT PRIMARY KEY,
-    data TEXT NOT NULL,
-    updated_at TEXT NOT NULL
-  );
-  CREATE TABLE IF NOT EXISTS usage (
-    day TEXT PRIMARY KEY,
-    count INTEGER NOT NULL
-  );
-`);
+// ---- Plain JSON-file storage (no native modules, no build step, works anywhere) ----
+const DB_PATH = path.join(__dirname, 'data.json');
+let store = { boards: {}, usage: {} };
+try {
+  if (fs.existsSync(DB_PATH)) {
+    store = JSON.parse(fs.readFileSync(DB_PATH, 'utf8'));
+    if (!store.boards) store.boards = {};
+    if (!store.usage) store.usage = {};
+  }
+} catch (e) {
+  console.error('Could not read data.json, starting fresh', e);
+}
+let writeTimer = null;
+function persist() {
+  clearTimeout(writeTimer);
+  writeTimer = setTimeout(() => {
+    fs.writeFile(DB_PATH, JSON.stringify(store), (err) => {
+      if (err) console.error('Could not write data.json', err);
+    });
+  }, 200);
+}
 
 const DAILY_CAP = parseInt(process.env.DAILY_CAP || '200', 10);
 const API_KEY = process.env.GEMINI_API_KEY;
@@ -29,11 +38,10 @@ function today() {
 // Returns true if the call is allowed (and records it), false if the daily cap is hit.
 function checkAndIncrementUsage() {
   const day = today();
-  const row = db.prepare('SELECT count FROM usage WHERE day=?').get(day);
-  const count = row ? row.count : 0;
+  const count = store.usage[day] || 0;
   if (count >= DAILY_CAP) return false;
-  if (row) db.prepare('UPDATE usage SET count=? WHERE day=?').run(count + 1, day);
-  else db.prepare('INSERT INTO usage (day,count) VALUES (?,1)').run(day);
+  store.usage[day] = count + 1;
+  persist();
   return true;
 }
 
@@ -42,24 +50,16 @@ function checkAndIncrementUsage() {
 app.get('/api/board', (req, res) => {
   const vid = req.query.visitor;
   if (!vid) return res.status(400).json({ error: 'missing visitor id' });
-  const row = db.prepare('SELECT data FROM boards WHERE visitor_id=?').get(vid);
-  if (!row) return res.json(null);
-  try {
-    res.json(JSON.parse(row.data));
-  } catch (e) {
-    res.json(null);
-  }
+  const entry = store.boards[vid];
+  if (!entry) return res.json(null);
+  res.json({ themes: entry.themes || [], cross: entry.cross || [] });
 });
 
 app.post('/api/board', (req, res) => {
   const { visitor, themes, cross } = req.body || {};
   if (!visitor) return res.status(400).json({ error: 'missing visitor id' });
-  const data = JSON.stringify({ themes: themes || [], cross: cross || [] });
-  const now = new Date().toISOString();
-  db.prepare(
-    `INSERT INTO boards (visitor_id, data, updated_at) VALUES (?,?,?)
-     ON CONFLICT(visitor_id) DO UPDATE SET data=excluded.data, updated_at=excluded.updated_at`
-  ).run(visitor, data, now);
+  store.boards[visitor] = { themes: themes || [], cross: cross || [], updatedAt: new Date().toISOString() };
+  persist();
   res.json({ ok: true });
 });
 
