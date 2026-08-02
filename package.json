@@ -1,0 +1,16 @@
+{
+  "name": "margin-app",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Margin - a handwritten journal that turns photos into structured notes and finds the thread connecting them.",
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "better-sqlite3": "^11.3.0"
+  }
+}
