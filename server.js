@@ -165,5 +165,15 @@ app.post('/api/thread', async (req, res) => {
 app.use(express.static(path.join(__dirname, 'public')));
 app.get('*', (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
 
+// Return JSON (not Express's default HTML error page) for things like oversized uploads,
+// so the frontend's fetch().json() never chokes trying to parse an HTML error page.
+app.use((err, req, res, next) => {
+  if (err && err.type === 'entity.too.large') {
+    return res.status(413).json({ ok: false, message: 'That photo is too large \u2014 try a smaller photo, or crop it a bit.' });
+  }
+  console.error('Unhandled error', err);
+  res.status(500).json({ ok: false, message: 'Something went wrong on the server \u2014 try again.' });
+});
+
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log('Margin server running on port ' + PORT));
