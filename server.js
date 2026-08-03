@@ -28,8 +28,9 @@ function persist() {
 }
 
 const DAILY_CAP = parseInt(process.env.DAILY_CAP || '200', 10);
-const API_KEY = process.env.GEMINI_API_KEY;
-const MODEL = 'gemini-2.5-flash';
+const API_KEY = process.env.GROQ_API_KEY;
+const MODEL = 'qwen/qwen3.6-27b'; // Groq's vision-capable free-tier model
+const GROQ_URL = 'https://api.groq.com/openai/v1/chat/completions';
 
 function today() {
   return new Date().toISOString().slice(0, 10);
@@ -66,7 +67,7 @@ app.post('/api/board', (req, res) => {
 // ---- AI proxy endpoints (API key never leaves the server) ----
 
 app.post('/api/transcribe', async (req, res) => {
-  if (!API_KEY) return res.status(500).json({ ok: false, message: 'Server is missing its Gemini API key.' });
+  if (!API_KEY) return res.status(500).json({ ok: false, message: 'Server is missing its Groq API key.' });
   if (!checkAndIncrementUsage()) {
     return res.status(429).json({ ok: false, message: "Margin's demo has hit its daily AI limit \u2014 try again tomorrow, or fill in the note by hand for now." });
   }
@@ -74,7 +75,6 @@ app.post('/api/transcribe', async (req, res) => {
     const { image, themeList } = req.body || {};
     const match = /^data:(image\/[a-zA-Z0-9.+-]+);base64,(.*)$/.exec(image || '');
     if (!match) return res.status(400).json({ ok: false, message: 'That image could not be read.' });
-    const [, mediaType, base64] = match;
     const themeListText = Array.isArray(themeList) && themeList.length ? themeList.join('\n') : '(none yet \u2014 this will be the first theme)';
 
     const promptText =
@@ -92,30 +92,30 @@ app.post('/api/transcribe', async (req, res) => {
       '\u2014 like an attentive friend pointing something out, not a corporate summary.' +
       '\n\nRead this handwritten page and turn it into a structured note as JSON.';
 
-    const r = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'X-goog-api-key': API_KEY },
-        body: JSON.stringify({
-          contents: [
-            {
-              parts: [
-                { text: promptText },
-                { inline_data: { mime_type: mediaType, data: base64 } },
-              ],
-            },
-          ],
-          generationConfig: { responseMimeType: 'application/json' },
-        }),
-      }
-    );
+    const r = await fetch(GROQ_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${API_KEY}` },
+      body: JSON.stringify({
+        model: MODEL,
+        messages: [
+          {
+            role: 'user',
+            content: [
+              { type: 'text', text: promptText },
+              { type: 'image_url', image_url: { url: image } },
+            ],
+          },
+        ],
+        response_format: { type: 'json_object' },
+        max_completion_tokens: 1000,
+      }),
+    });
     const data = await r.json();
     if (!r.ok) {
-      console.error('Gemini error', data);
-      return res.status(502).json({ ok: false, message: "Couldn't reach the AI reader \u2014 try again in a moment." });
+      console.error('Groq error', data);
+      return res.status(502).json({ ok: false, message: (data && data.error && data.error.message) || "Couldn't reach the AI reader \u2014 try again in a moment." });
     }
-    const raw = data.candidates?.[0]?.content?.parts?.map((p) => p.text || '').join('') || '';
+    const raw = data.choices?.[0]?.message?.content || '';
     const parsed = JSON.parse(raw.replace(/```json|```/g, '').trim());
     res.json({ ok: true, note: parsed });
   } catch (err) {
@@ -125,7 +125,7 @@ app.post('/api/transcribe', async (req, res) => {
 });
 
 app.post('/api/thread', async (req, res) => {
-  if (!API_KEY) return res.status(500).json({ ok: false, message: 'Server is missing its Gemini API key.' });
+  if (!API_KEY) return res.status(500).json({ ok: false, message: 'Server is missing its Groq API key.' });
   if (!checkAndIncrementUsage()) {
     return res.status(429).json({ ok: false, message: "Margin's demo has hit its daily AI limit \u2014 try again tomorrow." });
   }
@@ -140,20 +140,21 @@ app.post('/api/thread', async (req, res) => {
       'No headers, no bullet points, no therapy-speak, no corporate summary tone \u2014 just plain warm prose that could sit handwritten in a margin.' +
       '\n\nHere are my notes:\n\n' + notesText;
 
-    const r = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'X-goog-api-key': API_KEY },
-        body: JSON.stringify({ contents: [{ parts: [{ text: promptText }] }] }),
-      }
-    );
+    const r = await fetch(GROQ_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${API_KEY}` },
+      body: JSON.stringify({
+        model: MODEL,
+        messages: [{ role: 'user', content: promptText }],
+        max_completion_tokens: 500,
+      }),
+    });
     const data = await r.json();
     if (!r.ok) {
-      console.error('Gemini error', data);
-      return res.status(502).json({ ok: false, message: 'Something went wrong reaching the thread-finder.' });
+      console.error('Groq error', data);
+      return res.status(502).json({ ok: false, message: (data && data.error && data.error.message) || 'Something went wrong reaching the thread-finder.' });
     }
-    const raw = data.candidates?.[0]?.content?.parts?.map((p) => p.text || '').join('') || '';
+    const raw = data.choices?.[0]?.message?.content || '';
     res.json({ ok: true, text: raw });
   } catch (err) {
     console.error('thread error', err);
