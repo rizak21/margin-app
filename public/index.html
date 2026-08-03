@@ -247,7 +247,9 @@
   </div>
   <div class="hint" id="hint">tap a leaf to read &middot; tap a bubble to pin focus</div>
   <div id="stage"><div id="canvas"><svg class="wires" id="wires"></svg>
-    <div class="anchor" id="anchor"><div class="ring"><span>my</span><b>June</b></div></div></div></div>
+    <div class="anchor" id="anchor"><div class="ring"><span>my</span><b id="anchorMonth">June</b></div></div>
+    <div id="emptyHint" style="position:absolute;left:0;top:130px;width:260px;text-align:center;transform:translateX(-50%);font-family:'Newsreader',serif;font-size:14.5px;color:var(--ink-soft);line-height:1.5;display:none">Tap Upload to capture your first handwritten note \u2014 Margin will build your first branch around it.</div>
+    </div></div>
   <div class="nudge" id="nudge">Tap a <span class="k">theme circle</span> to pin it as a focus.
     <small>Pin 1&ndash;2, then try "Find the thread" to see what connects them.</small></div>
   <div class="focusbar"><div class="focus-label" id="focusLabel">Pick <b>1&ndash;2</b> themes to go deep on</div>
@@ -289,6 +291,9 @@
   <div class="cornell"><div class="col qcol"><div class="lab">Key question</div><div class="q" id="sQ"></div></div>
     <div class="col"><div class="lab">Notes</div><p id="sBody"></p></div></div>
   <div class="summ"><div class="lab">Summary</div><p id="sSumm"></p></div>
+  <div class="summ" id="sAnalysisRow" style="display:none;background:var(--sand-fade,rgba(201,169,107,.12));border-radius:12px;padding:12px 14px;margin-top:4px">
+    <div class="lab">&#10024; What this might mean</div><p id="sAnalysis" style="font-style:italic"></p>
+  </div>
   <div class="srcrow"><span class="lab">Source</span> <span class="val" id="sSrc"></span></div>
   <div class="orig"><div class="lab">&#128247; your original page</div><img id="sImg" alt="original handwritten note"></div>
   <div class="meta"><span id="sDate"></span><span id="sFmt"></span></div>
@@ -308,17 +313,26 @@ const PAGES={
 /* Notes from the user's real pocket journal (Chinese translated to English). Cornell-structured. page:n maps to original photo. */
 function todayISO(){var d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}
 function todayShort(){var d=new Date();var months=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];return d.getDate()+' '+months[d.getMonth()];}
-const SEED_THEMES = [
-  {id:'reflect', name:'Inner\nReflection', q:'how do I want to live?', weight:6, angle:-90, color:'#8A9A6B', notes:[
-    {t:'Welcome to Margin', kq:'How does this actually work?',
-     b:'Tap Upload and snap a photo of a handwritten page \u2014 Margin reads it and turns it into a note like this one. Tap a bubble to pin a theme, then try "Find the thread" to see what you keep circling around.',
-     s:'This is a starter note \u2014 replace it by capturing your own handwriting.', d:todayShort(), iso:todayISO(), f:'\u270e example', src:'', imp:false, page:null, imgData:null},
-  ]},
-  {id:'content', name:'Ideas &\nProjects', q:'what am I building?', weight:5, angle:-15, color:'#C48B8B', notes:[]},
-  {id:'uni', name:'Learning &\nGrowth', q:'what am I learning?', weight:6, angle:65, color:'#9A8AB0', notes:[]},
-  {id:'plans', name:'Plans &\nNext Steps', q:'what\u2019s next?', weight:5, angle:160, color:'#C9A96B', notes:[]},
-];
+const SEED_THEMES = [];
 const SEED_CROSS = [];
+const THEME_PALETTE=['#8A9A6B','#C48B8B','#9A8AB0','#C9A96B','#7B9E9E','#B08968','#8899AA','#AA8899','#9AA86B','#B08A8A'];
+function themeWeight(theme){return Math.min(10,4+theme.notes.length*1.4);}
+function slugify(s){return (s||'theme').toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/(^-|-$)/g,'')||'theme';}
+function wrapThemeName(name){
+  var words=(name||'New Theme').trim().split(/\s+/);
+  if(words.length<=1)return words.join(' ');
+  var mid=Math.ceil(words.length/2);
+  return words.slice(0,mid).join(' ')+'\n'+words.slice(mid).join(' ');
+}
+function assignAngles(){
+  var n=THEMES.length;if(n===0)return;
+  THEMES.forEach(function(t,i){t.angle=-90+i*(360/n);});
+}
+function findThemeByName(name){
+  var norm=(name||'').trim().toLowerCase();
+  if(!norm)return null;
+  return THEMES.find(function(t){return t.name.replace('\n',' ').toLowerCase()===norm;})||null;
+}
 let THEMES = [];
 let CROSS = [];
 /* ===== helpers ===== */
@@ -336,12 +350,15 @@ function buildBoard(){
   Object.keys(themeEls).forEach(function(k){delete themeEls[k];});
   Object.keys(leafPos).forEach(function(k){delete leafPos[k];});
   Object.keys(leafEls).forEach(function(k){delete leafEls[k];});
+  var hint=document.getElementById('emptyHint');
+  if(hint)hint.style.display=(THEMES.length===0)?'':'none';
   THEMES.forEach(function(theme){
     const a=theme.angle*Math.PI/180, tx=Math.cos(a)*RAD, ty=Math.sin(a)*RAD;
+    const w=themeWeight(theme);
     addWire(0,0,tx,ty,2,'var(--ink)',.5);
     const el=document.createElement('div');el.className='theme';el.style.left=tx+'px';el.style.top=ty+'px';
-    const size=bubbleSize(theme.weight);
-    el.innerHTML='<div class="bubble" style="width:'+size+'px;height:'+size+'px;font-size:'+(13+theme.weight)+'px"><span class="ribbon">\uD83D\uDD16</span>'+theme.name.replace('\n','<br>')+'</div><div class="q">\u201c'+theme.q+'\u201d</div><div class="count">'+theme.notes.length+' notes</div>';
+    const size=bubbleSize(w);
+    el.innerHTML='<div class="bubble" style="width:'+size+'px;height:'+size+'px;font-size:'+(13+w)+'px;background:'+(theme.color||'var(--sand)')+'22"><span class="ribbon">\uD83D\uDD16</span>'+theme.name.replace('\n','<br>')+'</div><div class="q">\u201c'+theme.q+'\u201d</div><div class="count">'+theme.notes.length+' notes</div>';
     el.addEventListener('click',function(){togglePin(theme.id);});
     canvas.appendChild(el);themeEls[theme.id]=el;
     theme.notes.forEach(function(n,i){
@@ -420,6 +437,9 @@ function _open(theme,n,idx){
   document.getElementById('sQ').textContent='\u201c'+n.kq+'\u201d';
   document.getElementById('sBody').textContent=n.b;
   document.getElementById('sSumm').textContent=n.s;
+  var arow=document.getElementById('sAnalysisRow');
+  if(n.analysis&&n.analysis.trim()){arow.style.display='';document.getElementById('sAnalysis').textContent=n.analysis;}
+  else{arow.style.display='none';}
   document.getElementById('sImg').src=(n.page!=null?PAGES[n.page]:(n.imgData||''));
   document.getElementById('sDate').textContent=n.d;
   document.getElementById('sFmt').textContent=n.f;
@@ -485,8 +505,9 @@ stage.addEventListener('touchmove',function(e){if(pinch&&e.touches.length===2){e
 stage.addEventListener('touchend',function(e){if(e.touches.length<2)pinch=false;});
 function dist(e){var a=e.touches[0],b=e.touches[1];return Math.hypot(a.clientX-b.clientX,a.clientY-b.clientY);}
 document.getElementById('godeep').addEventListener('click',function(){var names=[...pinned].map(function(id){return THEMES.find(function(t){return t.id===id;}).name.replace('\n',' ');});alert('Going deep on: '+names.join(' + ')+'\n\nNext: focused view + provoke questions.');});
-document.getElementById('nudge').addEventListener('click',function(){togglePin('reflect');document.getElementById('nudge').classList.remove('show');});
+document.getElementById('nudge').addEventListener('click',function(){if(THEMES[0])togglePin(THEMES[0].id);document.getElementById('nudge').classList.remove('show');});
 scale=0.74;apply();
+(function(){var months=['January','February','March','April','May','June','July','August','September','October','November','December'];document.getElementById('anchorMonth').textContent=months[new Date().getMonth()];})();
 
 /* ===== VISITOR IDENTITY + PERSISTENCE ===== */
 function getVisitorId(){
@@ -615,7 +636,7 @@ tabJournal.addEventListener('click',function(){show('journal');});
 
 /* ===== CAPTURE FLOW ===== */
 var capBackdrop=document.getElementById('capBackdrop'),capModal=document.getElementById('capModal'),capFile=document.getElementById('capFile'),capBody=document.getElementById('capBody'),capStepEl=document.getElementById('capStep'),capTitleEl=document.getElementById('capTitle');
-var capImg=null,capSelTheme='reflect';
+var capImg=null,capSelThemeName='';
 function openCapture(){capImg=null;capTitleEl.textContent='Add a note';capStepEl.textContent='Snap or upload a photo of your handwritten page.';
   capBody.innerHTML='<div class="drop" id="dropZone"><div class="ic">\uD83D\uDCF7</div><div class="t">Upload a photo</div><div class="s">tap to choose a handwriting photo</div></div>';
   document.getElementById('dropZone').onclick=function(){capFile.click();};
@@ -624,17 +645,17 @@ function closeCapture(){capBackdrop.classList.remove('open');capModal.classList.
 document.getElementById('uploadBtn').addEventListener('click',openCapture);
 capBackdrop.addEventListener('click',closeCapture);
 capFile.addEventListener('change',function(e){var f=e.target.files&&e.target.files[0];if(!f)return;var r=new FileReader();r.onload=function(){capImg=r.result;showReading();};r.readAsDataURL(f);});
-function showReading(){capTitleEl.textContent='Reading your note\u2026';capStepEl.textContent='Understanding the handwriting and its structure.';
+function showReading(){capTitleEl.textContent='Reading your note\u2026';capStepEl.textContent='Understanding the handwriting and figuring out where it fits.';
   capBody.innerHTML='<div class="preview"><img src="'+capImg+'"></div><div class="reading"><div class="pen">\u270D\uFE0F</div><div class="t">reading your handwriting\u2026</div><div class="bar"><i></i></div></div>';
   transcribeNote();}
 function wait(ms){return new Promise(function(res){setTimeout(res,ms);});}
 async function transcribeNote(){
   var parsed=null,errMsg=null;
   try{
-    var themeList=THEMES.map(function(t){return t.id+': '+t.name.replace('\n',' ')+' \u2014 '+t.q;});
+    var themeNames=THEMES.map(function(t){return t.name.replace('\n',' ');});
     var apiCall=fetch('/api/transcribe',{
       method:"POST",headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({image:capImg,themeList:themeList})
+      body:JSON.stringify({image:capImg,themeList:themeNames})
     }).then(function(r){return r.json();});
     var results=await Promise.all([apiCall,wait(1100)]);
     var data=results[0];
@@ -648,9 +669,10 @@ async function transcribeNote(){
 }
 function showDraft(parsed,errMsg){capTitleEl.textContent='Your draft note';
   capStepEl.textContent=parsed?"Here's what I read from your page \u2014 edit anything, then save.":(errMsg||"I couldn't read that page clearly \u2014 fill in what you remember, or try another photo.");
-  if(parsed&&parsed.theme_id&&THEMES.some(function(t){return t.id===parsed.theme_id;}))capSelTheme=parsed.theme_id;
-  var themeBtns=THEMES.map(function(t){return '<button class="tsel'+(t.id===capSelTheme?' on':'')+'" data-t="'+t.id+'">'+t.name.replace('\n',' ')+'</button>';}).join('');
+  capSelThemeName=(parsed&&parsed.theme_name)||(THEMES[0]?THEMES[0].name.replace('\n',' '):'New Theme');
   var esc=function(s){return (s||'').replace(/"/g,'&quot;');};
+  var existing=findThemeByName(capSelThemeName);
+  var themeHint=existing?"\u21b3 falls under your existing \u201c"+capSelThemeName+"\u201d theme":"\u21b3 this will start a new branch: \u201c"+capSelThemeName+"\u201d";
   capBody.innerHTML='<div class="preview" style="margin-bottom:8px"><img src="'+capImg+'" style="max-height:150px"></div>'
     +'<div class="draft">'
     +'<label>Title</label><input id="dTitle" type="text" value="'+esc(parsed&&parsed.title||'New handwritten note')+'">'
@@ -658,28 +680,32 @@ function showDraft(parsed,errMsg){capTitleEl.textContent='Your draft note';
     +'<label>Notes</label><textarea id="dBody" rows="3" placeholder="The main content, cleaned up\u2026">'+(parsed&&parsed.body||'')+'</textarea>'
     +'<label>Summary</label><textarea id="dSumm" rows="2" placeholder="One-line takeaway\u2026">'+(parsed&&parsed.summary||'')+'</textarea>'
     +'<label>Source (optional)</label><input id="dSrc" type="text" value="'+esc(parsed&&parsed.source_guess)+'" placeholder="Podcast name, YouTube/article URL, book title\u2026">'
-    +'<label>Theme</label><div class="themesel" id="dThemes">'+themeBtns+'</div></div>'
+    +'<label>Theme</label><input id="dTheme" type="text" value="'+esc(capSelThemeName)+'" placeholder="e.g. Ideas & Projects">'
+    +'<div class="s" id="dThemeHint" style="margin:-6px 0 4px">'+themeHint+'</div>'
+    +'</div>'
     +'<div class="capbtns"><button class="ghost" id="capCancel">cancel</button><button class="primary" id="capSave">save to board</button></div>';
-  document.querySelectorAll('#dThemes .tsel').forEach(function(b){b.onclick=function(){capSelTheme=b.dataset.t;document.querySelectorAll('#dThemes .tsel').forEach(function(x){x.classList.toggle('on',x.dataset.t===capSelTheme);});};});
+  document.getElementById('dTheme').addEventListener('input',function(){
+    capSelThemeName=this.value.trim();
+    var ex=findThemeByName(capSelThemeName);
+    document.getElementById('dThemeHint').textContent=capSelThemeName?(ex?"\u21b3 falls under your existing \u201c"+capSelThemeName+"\u201d theme":"\u21b3 this will start a new branch: \u201c"+capSelThemeName+"\u201d"):'';
+  });
   document.getElementById('capCancel').onclick=closeCapture;
-  document.getElementById('capSave').onclick=saveCapture;}
-function saveCapture(){
-  var t=THEMES.find(function(x){return x.id===capSelTheme;});
+  document.getElementById('capSave').onclick=function(){saveCapture(parsed);};}
+function saveCapture(parsed){
+  var name=(document.getElementById('dTheme').value||capSelThemeName||'New Theme').trim();
+  var t=findThemeByName(name);
+  if(!t){
+    t={id:slugify(name)+'-'+Date.now().toString(36),name:wrapThemeName(name),
+       q:(parsed&&parsed.theme_question)||'what belongs here?',
+       color:THEME_PALETTE[THEMES.length%THEME_PALETTE.length],angle:0,notes:[]};
+    THEMES.push(t);
+    assignAngles();
+  }
   var n={t:document.getElementById('dTitle').value.trim()||'Untitled note',
     kq:document.getElementById('dQ').value.trim()||'What is this about?',
     b:document.getElementById('dBody').value.trim(),s:document.getElementById('dSumm').value.trim(),
-    src:document.getElementById('dSrc').value.trim(),d:todayShort(),iso:todayISO(),f:'\u270e uploaded',imp:false,page:null,imgData:capImg};
-  t.notes.push(n);ALL.push({theme:t,n:n,i:t.notes.length-1});
-  addBoardLeaf(t,t.notes.length-1);buildJournal();closeCapture();show('journal');scheduleSave();}
-function addBoardLeaf(theme,idx){
-  var a=theme.angle*Math.PI/180;var size=bubbleSize(theme.weight);var tx=Math.cos(a)*RAD,ty=Math.sin(a)*RAD;
-  var i=idx;var la=a+(i-(theme.notes.length-1)/2)*0.48;var ld=RAD+size/2+42+(i%2)*16;
-  var lx=Math.cos(la)*ld,ly=Math.sin(la)*ld;leafPos[theme.id+'_'+i]={x:lx,y:ly};
-  addWire(tx,ty,lx,ly,1,'var(--ink-faint)',.6);
-  var leaf=document.createElement('div');leaf.className='leaf';leaf.dataset.t=theme.id;
-  leaf.style.left=lx+'px';leaf.style.top=ly+'px';leaf.style.flexDirection=Math.cos(la)<0?'row-reverse':'row';
-  leaf.innerHTML='<div class="dot"></div><div class="kq">'+theme.notes[i].kq+'</div>';
-  leaf.addEventListener('click',function(e){e.stopPropagation();window.openNote(theme,theme.notes[i],i);});
-  canvas.appendChild(leaf);leafEls[theme.id+'_'+i]=leaf;
-  themeEls[theme.id].querySelector('.count').textContent=theme.notes.length+' notes';}
+    src:document.getElementById('dSrc').value.trim(),d:todayShort(),iso:todayISO(),f:'\u270e uploaded',imp:false,page:null,imgData:capImg,
+    analysis:(parsed&&parsed.analysis)||''};
+  t.notes.push(n);
+  buildBoard();buildAll();buildJournal();closeCapture();show('journal');scheduleSave();}
 </script></body></html>
