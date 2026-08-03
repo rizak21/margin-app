@@ -106,8 +106,7 @@ app.post('/api/transcribe', async (req, res) => {
             ],
           },
         ],
-        response_format: { type: 'json_object' },
-        max_completion_tokens: 1000,
+        max_completion_tokens: 1500,
       }),
     });
     const data = await r.json();
@@ -116,7 +115,10 @@ app.post('/api/transcribe', async (req, res) => {
       return res.status(502).json({ ok: false, message: (data && data.error && data.error.message) || "Couldn't reach the AI reader \u2014 try again in a moment." });
     }
     const raw = data.choices?.[0]?.message?.content || '';
-    const parsed = JSON.parse(raw.replace(/```json|```/g, '').trim());
+    let cleaned = raw.replace(/```json|```/g, '').trim();
+    const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
+    if (jsonMatch) cleaned = jsonMatch[0];
+    const parsed = JSON.parse(cleaned);
     res.json({ ok: true, note: parsed });
   } catch (err) {
     console.error('transcribe error', err);
