@@ -29,7 +29,7 @@ function persist() {
 
 const DAILY_CAP = parseInt(process.env.DAILY_CAP || '200', 10);
 const API_KEY = process.env.GROQ_API_KEY;
-const MODEL = 'meta-llama/llama-4-scout-17b-16e-instruct'; // Groq's vision-capable free-tier model
+const MODEL = 'qwen/qwen3.6-27b'; // Groq's vision-capable free-tier model
 const GROQ_URL = 'https://api.groq.com/openai/v1/chat/completions';
 
 function today() {
