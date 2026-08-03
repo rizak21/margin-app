@@ -75,17 +75,22 @@ app.post('/api/transcribe', async (req, res) => {
     const match = /^data:(image\/[a-zA-Z0-9.+-]+);base64,(.*)$/.exec(image || '');
     if (!match) return res.status(400).json({ ok: false, message: 'That image could not be read.' });
     const [, mediaType, base64] = match;
-    const themeListText = Array.isArray(themeList) ? themeList.join('\n') : '';
+    const themeListText = Array.isArray(themeList) && themeList.length ? themeList.join('\n') : '(none yet \u2014 this will be the first theme)';
 
     const promptText =
-      'You read photos of a person\'s handwritten journal page and turn it into a structured Cornell note. ' +
-      'Respond ONLY with raw JSON, no preamble, no markdown fences. Shape: ' +
-      '{"title":string,"key_question":string,"body":string,"summary":string,"source_guess":string,"theme_id":string}. ' +
+      'You read photos of a person\'s handwritten journal page and turn it into a structured note, and you also decide which ' +
+      'branch/theme of their journal it belongs to. Respond ONLY with raw JSON, no preamble, no markdown fences. Shape: ' +
+      '{"title":string,"key_question":string,"body":string,"summary":string,"source_guess":string,"theme_name":string,"theme_question":string,"analysis":string}. ' +
       'title is short (3-6 words). key_question is the question this note is really exploring. ' +
       'body is the cleaned-up content in the writer\'s own voice, a few sentences. summary is one line. ' +
       'source_guess is a podcast/book/article name only if the page clearly mentions one, else empty string. ' +
-      'theme_id must be the single best-fit id from this list of existing themes (pick even if imperfect):\n' + themeListText +
-      '\n\nRead this handwritten page and turn it into a Cornell note as JSON.';
+      'theme_name is a short 2-4 word Title Case label for the branch this note belongs under (e.g. "Career Plans", "Inner Reflection"). ' +
+      'Here are the person\'s existing theme names \u2014 if this note clearly fits one, reuse that EXACT name (same spelling/casing); ' +
+      'only invent a new theme_name if none of these genuinely fit:\n' + themeListText + '\n' +
+      'theme_question is a short guiding question for that whole theme (only meaningfully used if this is a new theme), e.g. "what am I building?". ' +
+      'analysis is 2-3 warm, perceptive sentences, second person ("you"), noticing why this note might matter or what it connects to in the person\'s life ' +
+      '\u2014 like an attentive friend pointing something out, not a corporate summary.' +
+      '\n\nRead this handwritten page and turn it into a structured note as JSON.';
 
     const r = await fetch(
       `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent?key=${API_KEY}`,
